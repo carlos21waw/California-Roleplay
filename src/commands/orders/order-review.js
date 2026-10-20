@@ -1,12 +1,13 @@
 import { SlashCommandBuilder } from 'discord.js';
 import { getOrder, updateOrder, incrementUserProfile } from '../../database/db.js';
 import { createSuccessEmbed, createErrorEmbed } from '../../embeds/embedBuilder.js';
+import { formatDiscordTimestamp } from '../../utils/formatters.js';
 
 export const data = new SlashCommandBuilder()
   .setName('order-review')
-  .setDescription('Leave a review and 1-5 star rating for your completed order')
+  .setDescription('Submit a verified review and 1-5 star rating for your completed order')
   .addStringOption(option =>
-    option.setName('order_id').setDescription('The Order ID to review').setRequired(true)
+    option.setName('order_id').setDescription('The completed Order ID to review').setRequired(true)
   )
   .addIntegerOption(option =>
     option
@@ -21,21 +22,29 @@ export const data = new SlashCommandBuilder()
   );
 
 export async function execute(interaction) {
-  const orderId = interaction.options.getString('order_id').toUpperCase();
+  const orderId = interaction.options.getString('order_id').toUpperCase().trim();
   const rating = interaction.options.getInteger('rating');
   const feedback = interaction.options.getString('feedback');
 
   const order = await getOrder(orderId);
   if (!order) {
     return interaction.reply({
-      embeds: [createErrorEmbed('Not Found', `Order \`${orderId}\` does not exist.`)],
+      embeds: [
+        createErrorEmbed('Commission Not Found', `Order \`${orderId}\` does not exist.`, 'ERR_NOT_FOUND')
+      ],
       ephemeral: true
     });
   }
 
   if (order.user_id !== interaction.user.id) {
     return interaction.reply({
-      embeds: [createErrorEmbed('Permission Denied', 'You can only review orders that you placed.')],
+      embeds: [
+        createErrorEmbed(
+          'Permission Denied',
+          'You may only leave reviews on commissions placed by your Discord account.',
+          'ERR_UNAUTHORIZED'
+        )
+      ],
       ephemeral: true
     });
   }
@@ -50,20 +59,22 @@ export async function execute(interaction) {
     await incrementUserProfile(order.designer_id, 'reputation', rating >= 4 ? 2 : 1);
   }
 
-  const stars = '⭐'.repeat(rating);
+  const starSymbols = '★'.repeat(rating) + '☆'.repeat(5 - rating);
 
-  await interaction.reply({
-    embeds: [
-      createSuccessEmbed(
-        'Thank You for Your Review!',
-        `Your feedback for order **${orderId}** has been recorded:\n\n` +
-        `• **Rating:** ${stars} (${rating}/5)\n` +
-        `• **Designer:** ${order.designer_id ? `<@${order.designer_id}>` : '*Unassigned*'}\n` +
-        `• **Feedback:** "${feedback}"\n\n` +
-        `We appreciate you choosing Silence Designs!`
-      )
-    ]
-  });
+  const reviewEmbed = createSuccessEmbed(
+    `Review Published — ${orderId}`,
+    `Thank you for taking the time to share your experience with Silence Designs!`,
+    [
+      { name: 'Commission', value: `\`${order.id}\` (${order.service_type})`, inline: true },
+      { name: 'Rating', value: `\` ${starSymbols} \` **${rating}/5**`, inline: true },
+      { name: 'Designer', value: order.designer_id ? `<@${order.designer_id}>` : '*Unassigned*', inline: true },
+      { name: 'Published', value: formatDiscordTimestamp(Date.now(), 'f'), inline: true },
+      { name: 'Client Feedback', value: `>>> "${feedback}"`, inline: false }
+    ],
+    'Your review has been attached to your order record and added to our designer reputation registry.'
+  );
+
+  await interaction.reply({ embeds: [reviewEmbed] });
 }
 
 export default { data, execute };

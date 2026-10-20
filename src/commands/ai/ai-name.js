@@ -4,18 +4,24 @@ import { createBaseEmbed, createErrorEmbed } from '../../embeds/embedBuilder.js'
 
 export const data = new SlashCommandBuilder()
   .setName('ai-name')
-  .setDescription('Generate realistic city, county, department, or server names for your community')
+  .setDescription('Generate authentic fictional county, city, department, or server names')
   .addStringOption(option =>
     option
       .setName('region_vibe')
-      .setDescription('Region or geographic vibe (e.g. Pacific Northwest, Deep South, Coastal Metropolitan)')
+      .setDescription('Geographic atmosphere (e.g. Pacific Northwest, Deep South, Coastal Metro, Rust Belt)')
       .setRequired(true)
   );
 
 export async function execute(interaction) {
   if (!isAiConfigured()) {
     return interaction.reply({
-      embeds: [createErrorEmbed('AI Not Configured', 'Google Gemini API is not configured on this bot. Please set `GEMINI_API_KEY` in `.env`.')],
+      embeds: [
+        createErrorEmbed(
+          'AI Service Offline',
+          'Google Gemini API is not configured on this instance. Please set `GEMINI_API_KEY` in `.env`.',
+          'ERR_AI_UNCONFIGURED'
+        )
+      ],
       ephemeral: true
     });
   }
@@ -24,25 +30,26 @@ export async function execute(interaction) {
   const vibe = interaction.options.getString('region_vibe');
 
   try {
-    const prompt = `Generate 10 authentic-sounding fictional county, township, municipal, and department names matching the regional vibe: "${vibe}". For each:
-- County / City Name
-- Corresponding Police Agency Name
-- Corresponding Fire / Rescue Agency Name
-- Quick 1-sentence regional atmosphere.`;
+    const prompt = `Generate 8 authentic-sounding fictional county, township, municipal, and emergency agency names for the regional vibe: "${vibe}".
+For each entry, format cleanly:
+• **[Jurisdiction Name]**
+  - Police: [e.g. County Sheriff or Municipal PD]
+  - Fire/EMS: [e.g. Fire & Rescue District #4]
+  - Atmosphere: [1 short sentence setting the roleplay feel]`;
 
     const result = await generateDesignContent(prompt);
 
     const embed = createBaseEmbed({
-      title: `🏷️ Community & Agency Names — ${vibe}`,
+      title: `✦ Nomenclature Registry — ${vibe}`,
       description: result,
-      color: 0x06B6D4,
-      footerText: 'Silence Designs AI Naming Studio'
+      color: 0x38BDF8,
+      footerText: 'Silence Designs Agency Directory • Fictional Worldbuilding'
     });
 
     await interaction.editReply({ embeds: [embed] });
   } catch (err) {
     await interaction.editReply({
-      embeds: [createErrorEmbed('AI Generation Error', err.message)]
+      embeds: [createErrorEmbed('Generation Error', err.message, 'ERR_GEMINI_FAIL')]
     });
   }
 }

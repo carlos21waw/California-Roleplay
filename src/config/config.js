@@ -51,18 +51,21 @@ export const config = {
     ordersCategory: process.env.CATEGORY_ORDERS_ID || ''
   },
 
-  // Branding Palette
+  // Branding Palette — Luxury Charcoal, Diamond & Silver
   colors: {
-    primary: 0x181B22,     // Deep sleek dark
-    accent: 0x38BDF8,      // Electric cyan / diamond
-    success: 0x22C55E,     // Green
-    warning: 0xF59E0B,     // Amber
-    error: 0xEF4444,       // Red
-    moderation: 0x8B5CF6,  // Royal violet
-    giveaway: 0xEC4899,    // Vibrant pink
-    store: 0x06B6D4,       // Cyan
-    gold: 0xEAB308         // Gold
+    primary: 0x16181D,     // Deep charcoal obsidian
+    accent: 0x38BDF8,      // Signature diamond ice blue
+    silver: 0xCBD5E1,      // Platinum silver
+    dark: 0x0F1115,        // Carbon dark
+    success: 0x10B981,     // Refined emerald
+    warning: 0xF59E0B,     // Deep amber
+    error: 0xEF4444,       // Crimson ruby
+    moderation: 0x6366F1,  // Slate indigo
+    giveaway: 0xEC4899,    // Neon rose
+    store: 0x0EA5E9,       // Premium cyan
+    gold: 0xF59E0B         // Platinum gold
   },
+  footerText: 'Silence Designs • Premium Experience',
 
   // Asset Paths (Relative to project root)
   assets: {

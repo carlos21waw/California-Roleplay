@@ -15,7 +15,13 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction) {
   if (!isAiConfigured()) {
     return interaction.reply({
-      embeds: [createErrorEmbed('AI Not Configured', 'Google Gemini API is not configured on this bot. Please set `GEMINI_API_KEY` in `.env`.')],
+      embeds: [
+        createErrorEmbed(
+          'AI Service Offline',
+          'Google Gemini API is not configured on this instance. Please set `GEMINI_API_KEY` in `.env`.',
+          'ERR_AI_UNCONFIGURED'
+        )
+      ],
       ephemeral: true
     });
   }
@@ -24,24 +30,32 @@ export async function execute(interaction) {
   const agency = interaction.options.getString('agency_type');
 
   try {
-    const prompt = `Generate 8 diverse, memorable mottos and slogans suitable for vehicle livery quarter panels and department branding for: "${agency}". Include:
-- 3 Traditional / Prestigious (e.g. "Integrity • Vigilance • Service")
-- 3 Modern / Assertive (e.g. "Protecting Tomorrow, Today")
-- 2 Latin / Classical with English translations.`;
+    const prompt = `Generate 8 distinctive, memorable slogans and quarter-panel mottos for: "${agency}".
+Group them into:
+### Traditional & Prestigious
+(3 formal, established law enforcement / emergency services mottos)
+
+### Modern & High-Impact
+(3 sleek, tactical, assertive mottos)
+
+### Classical / Latin with Translations
+(2 historical mottos with English translations)
+
+Format each motto in inline code blocks or quotes for easy copy-pasting onto livery decal templates.`;
 
     const result = await generateDesignContent(prompt);
 
     const embed = createBaseEmbed({
-      title: `🖋️ Slogans & Mottos — ${agency}`,
+      title: `✦ Quarter-Panel Mottos — ${agency}`,
       description: result,
-      color: 0xEAB308,
-      footerText: 'Silence Designs AI Slogan Generator'
+      color: 0xCBD5E1,
+      footerText: 'Silence Designs Typography Engine • Ready for decal placement'
     });
 
     await interaction.editReply({ embeds: [embed] });
   } catch (err) {
     await interaction.editReply({
-      embeds: [createErrorEmbed('AI Generation Error', err.message)]
+      embeds: [createErrorEmbed('Generation Error', err.message, 'ERR_GEMINI_FAIL')]
     });
   }
 }

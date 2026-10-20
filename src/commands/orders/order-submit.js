@@ -2,10 +2,11 @@ import { SlashCommandBuilder } from 'discord.js';
 import { getOrder, updateOrder } from '../../database/db.js';
 import { isDesigner, isStaff } from '../../permissions/checkPermissions.js';
 import { createSuccessEmbed, createErrorEmbed } from '../../embeds/embedBuilder.js';
+import { formatDiscordTimestamp } from '../../utils/formatters.js';
 
 export const data = new SlashCommandBuilder()
   .setName('order-submit')
-  .setDescription('Submit a design draft, preview, or final file for an order')
+  .setDescription('Submit an official design draft, proof, or deliverable file for an order')
   .addStringOption(option =>
     option.setName('order_id').setDescription('The Order ID').setRequired(true)
   )
@@ -13,25 +14,33 @@ export const data = new SlashCommandBuilder()
     option.setName('file').setDescription('The preview image or delivery file').setRequired(true)
   )
   .addStringOption(option =>
-    option.setName('description').setDescription('Description of the draft or delivery').setRequired(false)
+    option.setName('description').setDescription('Revision details, asset specifications, or client notes').setRequired(false)
   );
 
 export async function execute(interaction) {
   if (!isDesigner(interaction.member) && !isStaff(interaction.member)) {
     return interaction.reply({
-      embeds: [createErrorEmbed('Permission Denied', 'Only designers or staff can submit order deliveries.')],
+      embeds: [
+        createErrorEmbed(
+          'Permission Denied',
+          'Only verified designers or staff can submit official deliverables.',
+          'ERR_FORBIDDEN'
+        )
+      ],
       ephemeral: true
     });
   }
 
-  const orderId = interaction.options.getString('order_id').toUpperCase();
+  const orderId = interaction.options.getString('order_id').toUpperCase().trim();
   const file = interaction.options.getAttachment('file');
-  const desc = interaction.options.getString('description') || 'Design draft / deliverable submitted.';
+  const desc = interaction.options.getString('description') || 'Design draft / deliverable submitted for customer inspection.';
 
   const order = await getOrder(orderId);
   if (!order) {
     return interaction.reply({
-      embeds: [createErrorEmbed('Not Found', `Order \`${orderId}\` was not found.`)],
+      embeds: [
+        createErrorEmbed('Commission Not Found', `Order record \`${orderId}\` was not found.`, 'ERR_NOT_FOUND')
+      ],
       ephemeral: true
     });
   }
@@ -41,13 +50,20 @@ export async function execute(interaction) {
     status: 'Awaiting Customer'
   });
 
+  const fileSizeKb = (file.size / 1024).toFixed(1);
+
   const embed = createSuccessEmbed(
-    `Design Submitted for Order ${orderId}`,
-    `**Designer:** <@${interaction.user.id}>\n` +
-    `**Customer:** <@${order.user_id}>\n` +
-    `**Notes:** ${desc}\n` +
-    `**File Name:** \`${file.name}\` (${(file.size / 1024).toFixed(1)} KB)\n\n` +
-    `Customer: Please review the attached file and let us know if revisions are needed!`
+    `Deliverable Proof Submitted — ${orderId}`,
+    `An updated draft or final file has been uploaded for client review.`,
+    [
+      { name: 'Lead Designer', value: `<@${interaction.user.id}>`, inline: true },
+      { name: 'Client Account', value: `<@${order.user_id}>`, inline: true },
+      { name: 'Order Status', value: '` 👤 PENDING REVIEW `', inline: true },
+      { name: 'Attached Asset', value: `\`${file.name}\` (${fileSizeKb} KB)`, inline: true },
+      { name: 'Submitted At', value: formatDiscordTimestamp(Date.now(), 't'), inline: true },
+      { name: 'Designer Notes', value: `>>> ${desc}`, inline: false }
+    ],
+    'Client: Please inspect the attached preview above. If revisions are required, discuss them here. If approved, staff will finalize completion.'
   );
 
   if (file.contentType?.startsWith('image/')) {

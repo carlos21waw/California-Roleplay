@@ -1,43 +1,43 @@
 import { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, ChannelType, PermissionFlagsBits, ButtonBuilder, ButtonStyle } from 'discord.js';
 import { createTicket } from '../database/db.js';
 import { generateRefId, safeText } from '../utils/formatters.js';
-import { createTicketWelcomeEmbed } from '../embeds/embedBuilder.js';
+import { createTicketWelcomeEmbed, createSuccessEmbed } from '../embeds/embedBuilder.js';
 import config from '../config/config.js';
 
 export function buildReportMemberModal() {
   const modal = new ModalBuilder()
     .setCustomId('modal_report_member')
-    .setTitle('Silence Designs — Report Member');
+    .setTitle('Silence Designs — Incident Report');
 
   const targetInput = new TextInputBuilder()
     .setCustomId('reported_user')
-    .setLabel('Reported Member (Username, Tag, or ID)')
+    .setLabel('Reported User (Tag, Username, or ID)')
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder('e.g. BadActor#0001 or 123456789012345678')
+    .setPlaceholder('e.g. Offender#0001 or User Snowflake ID')
     .setRequired(true)
     .setMaxLength(100);
 
   const reasonInput = new TextInputBuilder()
     .setCustomId('report_reason')
-    .setLabel('Violation Reason')
+    .setLabel('Infraction Classification')
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder('e.g. Mass ping, harassment, scam attempt, ban bypass')
+    .setPlaceholder('e.g. Harassment, Asset Piracy, Scam, ToS Violation')
     .setRequired(true)
     .setMaxLength(150);
 
   const detailsInput = new TextInputBuilder()
     .setCustomId('report_details')
-    .setLabel('Relevant Details & Context')
+    .setLabel('Incident Narrative & Specifics')
     .setStyle(TextInputStyle.Paragraph)
-    .setPlaceholder('Explain what happened and where...')
+    .setPlaceholder('Provide a factual, objective recount of the incident including timestamps and channel...')
     .setRequired(true)
     .setMaxLength(1000);
 
   const evidenceInput = new TextInputBuilder()
     .setCustomId('report_evidence')
-    .setLabel('Evidence Link(s) / Attachments')
+    .setLabel('Links to Screenshots / Screen Recordings')
     .setStyle(TextInputStyle.Paragraph)
-    .setPlaceholder('Paste message links, imgur links, or attach files in the ticket channel')
+    .setPlaceholder('Imgur, Discord message links, Streamable, or state "Uploading in ticket channel"')
     .setRequired(false)
     .setMaxLength(500);
 
@@ -57,7 +57,7 @@ export async function handleReportMemberSubmit(interaction) {
   const reportedUser = safeText(interaction.fields.getTextInputValue('reported_user'));
   const reason = safeText(interaction.fields.getTextInputValue('report_reason'));
   const details = safeText(interaction.fields.getTextInputValue('report_details'));
-  const evidence = safeText(interaction.fields.getTextInputValue('report_evidence')) || 'No external links provided (upload in channel).';
+  const evidence = safeText(interaction.fields.getTextInputValue('report_evidence')) || 'Attached directly in channel.';
 
   const refId = generateRefId('REP');
   let channel = null;
@@ -69,6 +69,7 @@ export async function handleReportMemberSubmit(interaction) {
       name: channelName,
       type: ChannelType.GuildText,
       parent: parentCategory,
+      topic: `Silence Designs Confidential Report ${refId} • Submitted by: ${interaction.user.tag}`,
       permissionOverwrites: [
         {
           id: interaction.guild.roles.everyone.id,
@@ -93,7 +94,7 @@ export async function handleReportMemberSubmit(interaction) {
     console.error('[ReportModal] Error creating channel:', err.message);
   }
 
-  const inquirySummary = `**Reported User:** ${reportedUser}\n**Reason:** ${reason}\n\n**Details:**\n${details}\n\n**Evidence:**\n${evidence}`;
+  const inquirySummary = `**Reported Account:** \`${reportedUser}\`\n**Violation:** \`${reason}\`\n\n**Details:**\n${details}\n\n**Evidence:**\n${evidence}`;
 
   await createTicket({
     id: refId,
@@ -111,33 +112,44 @@ export async function handleReportMemberSubmit(interaction) {
     const welcomeEmbed = createTicketWelcomeEmbed(
       interaction.user,
       refId,
-      'Report a Member',
+      'Confidential Incident Report',
       inquirySummary
     );
 
     const buttonsRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId(`ticket_claim_${refId}`)
-        .setLabel('Claim Ticket')
+        .setLabel('Claim Investigation')
         .setStyle(ButtonStyle.Success)
         .setEmoji('✋'),
       new ButtonBuilder()
         .setCustomId(`ticket_close_${refId}`)
-        .setLabel('Close Ticket')
+        .setLabel('Resolve & Archive')
         .setStyle(ButtonStyle.Secondary)
         .setEmoji('🔒')
     );
 
     await channel.send({
-      content: `<@${interaction.user.id}> Your report has been submitted confidentially to staff.`,
+      content: `<@${interaction.user.id}> ✦ Your confidential report has been securely filed.`,
       embeds: [welcomeEmbed],
       components: [buttonsRow]
     });
   }
 
-  await interaction.editReply({
-    content: `🚨 Report submitted under Reference ID **${refId}**. ${channel ? `View channel: <#${channel.id}>` : 'Staff will review it.'}`
-  });
+  const successEmbed = createSuccessEmbed(
+    'Incident Report Filed Confidentially',
+    `Your report regarding \`${reportedUser}\` has been logged under Reference ID \`${refId}\`.`,
+    [
+      { name: 'Reference ID', value: `\`${refId}\``, inline: true },
+      { name: 'Investigation Channel', value: channel ? `<#${channel.id}>` : '*Logged to Staff*', inline: true },
+      { name: 'Privacy Guarantee', value: 'The reported member has NOT been notified or pinged.', inline: false }
+    ],
+    channel
+      ? `Please upload any raw screenshots or logs to <#${channel.id}>. Staff will investigate impartially.`
+      : 'Moderators will audit the report.'
+  );
+
+  await interaction.editReply({ embeds: [successEmbed] });
 }
 
 export default {

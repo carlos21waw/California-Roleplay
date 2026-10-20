@@ -1,23 +1,23 @@
-import { SlashCommandBuilder } from 'discord.js';
+import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } from 'discord.js';
 import { getUserOrders, getAllOrders } from '../../database/db.js';
 import { isStaff } from '../../permissions/checkPermissions.js';
-import { createBaseEmbed } from '../../embeds/embedBuilder.js';
-import { getStatusBadge } from '../../utils/formatters.js';
+import { createBaseEmbed, createInfoEmbed } from '../../embeds/embedBuilder.js';
+import { getStatusBadge, formatDiscordTimestamp } from '../../utils/formatters.js';
 
 export const data = new SlashCommandBuilder()
   .setName('order-list')
-  .setDescription('List your active and past orders (or all orders for staff)')
+  .setDescription('List your active & past orders, or search all orders (Staff)')
   .addStringOption(option =>
     option
       .setName('status')
-      .setDescription('Filter orders by status (Staff only)')
+      .setDescription('Filter orders by production status (Staff)')
       .setRequired(false)
       .addChoices(
-        { name: 'Pending', value: 'Pending' },
-        { name: 'In Progress', value: 'In Progress' },
+        { name: 'Pending Review', value: 'Pending' },
         { name: 'Awaiting Payment', value: 'Awaiting Payment' },
-        { name: 'Completed', value: 'Completed' },
-        { name: 'Cancelled', value: 'Cancelled' }
+        { name: 'In Production', value: 'In Progress' },
+        { name: 'Completed & Delivered', value: 'Completed' },
+        { name: 'Cancelled / Denied', value: 'Cancelled' }
       )
   );
 
@@ -35,27 +35,95 @@ export async function execute(interaction) {
   }
 
   if (!orders || orders.length === 0) {
-    return interaction.reply({
-      content: staffMode
-        ? '📦 No orders found matching the filter criteria.'
-        : '📦 You currently do not have any orders with Silence Designs. Use `/order-create` to get started!',
-      ephemeral: true
-    });
+    const emptyEmbed = createInfoEmbed(
+      'No Orders Found',
+      staffMode
+        ? `No orders matching filter criteria \`${filterStatus || 'ALL'}\` were found in the database.`
+        : 'You do not have any active or past commissions with Silence Designs.\n\nUse `/order-create` to submit your first livery or asset commission!'
+    );
+    return interaction.reply({ embeds: [emptyEmbed], ephemeral: true });
   }
 
-  const items = orders.slice(0, 15).map(o =>
-    `• **${o.id}** — \`${o.service_type}\` | ${getStatusBadge(o.status)} | Created: <t:${Math.floor(o.created_at / 1000)}:R>`
-  );
+  const pageSize = 5;
+  const totalPages = Math.ceil(orders.length / pageSize);
+  let currentPage = 0;
 
-  const embed = createBaseEmbed({
-    title: staffMode ? `📋 All Orders Registry (${orders.length} total)` : `📦 Your Orders (${orders.length})`,
-    description: items.join('\n') + (orders.length > 15 ? `\n\n*...and ${orders.length - 15} more orders.*` : ''),
-    fields: [
-      { name: 'Lookup Individual Order', value: 'Run `/order-status <order_id>` to view full details and history.' }
-    ]
+  const buildPageEmbed = (page) => {
+    const start = page * pageSize;
+    const pageOrders = orders.slice(start, start + pageSize);
+
+    const fields = pageOrders.map(o => ({
+      name: `✦ ${o.id} • ${o.service_type}`,
+      value: `• **Status:** ${getStatusBadge(o.status)}\n` +
+        `• **Client:** <@${o.user_id}> | **Designer:** ${o.designer_id ? `<@${o.designer_id}>` : '*Unassigned*'}\n` +
+        `• **Created:** ${formatDiscordTimestamp(o.created_at, 'd')} • [Details: \`/order-status ${o.id}\`]`,
+      inline: false
+    }));
+
+    const activeCount = orders.filter(o => o.status !== 'Completed' && o.status !== 'Cancelled').length;
+    const completedCount = orders.filter(o => o.status === 'Completed').length;
+
+    return createBaseEmbed({
+      title: staffMode ? `📋 Master Commission Registry (${orders.length} total)` : `📦 Your Commission History (${orders.length})`,
+      description: `**Summary:** \`${activeCount} Active\` • \`${completedCount} Completed\` • Page **${page + 1}** of **${totalPages}**`,
+      fields,
+      footerText: `Silence Designs • Page ${page + 1}/${totalPages} • Use /order-status <id> for details`
+    });
+  };
+
+  const buildRow = (page) => {
+    return new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('btn_page_prev')
+        .setLabel('Previous')
+        .setStyle(ButtonStyle.Secondary)
+        .setEmoji('◀')
+        .setDisabled(page === 0),
+      new ButtonBuilder()
+        .setCustomId('btn_page_next')
+        .setLabel('Next')
+        .setStyle(ButtonStyle.Secondary)
+        .setEmoji('▶')
+        .setDisabled(page >= totalPages - 1)
+    );
+  };
+
+  const initialMessage = await interaction.reply({
+    embeds: [buildPageEmbed(currentPage)],
+    components: totalPages > 1 ? [buildRow(currentPage)] : [],
+    ephemeral: !staffMode,
+    fetchReply: true
   });
 
-  await interaction.reply({ embeds: [embed], ephemeral: !staffMode });
+  if (totalPages <= 1) return;
+
+  const collector = initialMessage.createMessageComponentCollector({
+    componentType: ComponentType.Button,
+    time: 120000
+  });
+
+  collector.on('collect', async (i) => {
+    if (i.user.id !== interaction.user.id) {
+      return i.reply({ content: 'Only the command invoker can control pagination.', ephemeral: true });
+    }
+
+    if (i.customId === 'btn_page_prev' && currentPage > 0) {
+      currentPage--;
+    } else if (i.customId === 'btn_page_next' && currentPage < totalPages - 1) {
+      currentPage++;
+    }
+
+    await i.update({
+      embeds: [buildPageEmbed(currentPage)],
+      components: [buildRow(currentPage)]
+    });
+  });
+
+  collector.on('end', async () => {
+    const disabledRow = buildRow(currentPage);
+    disabledRow.components.forEach(btn => btn.setDisabled(true));
+    await interaction.editReply({ components: [disabledRow] }).catch(() => null);
+  });
 }
 
 export default { data, execute };

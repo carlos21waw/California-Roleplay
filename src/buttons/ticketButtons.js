@@ -1,19 +1,26 @@
 import { isStaff, isDesigner } from '../permissions/checkPermissions.js';
-import { getTicketByRef, updateTicket, getTicketByChannel } from '../database/db.js';
-import { createTicketReceiptEmbed, createSuccessEmbed, createErrorEmbed } from '../embeds/embedBuilder.js';
+import { getTicketByRef, updateTicket } from '../database/db.js';
+import { createTicketReceiptEmbed, createSuccessEmbed, createErrorEmbed, createLoadingEmbed } from '../embeds/embedBuilder.js';
 import { generateTicketTranscript } from '../services/transcriptService.js';
+import { formatDiscordTimestamp } from '../utils/formatters.js';
 import config from '../config/config.js';
 import logger from '../services/logger.js';
 
 export async function handleTicketButtons(interaction) {
   const customId = interaction.customId;
 
-  // Handle Claim
+  // 1. Handle Claim
   if (customId.startsWith('ticket_claim_')) {
     const member = interaction.member;
     if (!isStaff(member) && !isDesigner(member)) {
       return interaction.reply({
-        embeds: [createErrorEmbed('Permission Denied', 'Only authorized Support, Administration, or Management team members may claim tickets.')],
+        embeds: [
+          createErrorEmbed(
+            'Authorization Required',
+            'Only authorized Support, Administration, or Management team members may claim tickets.',
+            'ERR_STAFF_ONLY'
+          )
+        ],
         ephemeral: true
       });
     }
@@ -23,24 +30,40 @@ export async function handleTicketButtons(interaction) {
 
     if (!ticket) {
       return interaction.reply({
-        embeds: [createErrorEmbed('Not Found', 'Ticket record was not found.')],
+        embeds: [
+          createErrorEmbed('Ticket Record Missing', 'This ticket reference does not exist in the database.', 'ERR_NOT_FOUND')
+        ],
         ephemeral: true
       });
     }
 
     if (ticket.claimed_by) {
       return interaction.reply({
-        content: `⚠️ This ticket is already claimed by <@${ticket.claimed_by}>.`,
+        embeds: [
+          createErrorEmbed(
+            'Ticket Already Claimed',
+            `This inquiry is currently assigned to <@${ticket.claimed_by}>. Use \`/ticket-transfer\` to reassign.`,
+            'ERR_ALREADY_CLAIMED'
+          )
+        ],
         ephemeral: true
       });
     }
 
     await updateTicket(refId, { claimed_by: interaction.user.id });
 
-    // Update message or send announcement
-    await interaction.reply({
-      embeds: [createSuccessEmbed('Ticket Claimed', `This ticket has been claimed by <@${interaction.user.id}>. They will handle your inquiry.`)]
-    });
+    const claimEmbed = createSuccessEmbed(
+      `Inquiry Claimed — ${refId}`,
+      `This channel has officially been claimed by <@${interaction.user.id}>.`,
+      [
+        { name: 'Representative', value: `<@${interaction.user.id}>`, inline: true },
+        { name: 'Customer Account', value: `<@${ticket.user_id}>`, inline: true },
+        { name: 'Claimed Timestamp', value: formatDiscordTimestamp(Date.now(), 't'), inline: true }
+      ],
+      'Our team member will review your specifications and reply directly in this channel.'
+    );
+
+    await interaction.reply({ embeds: [claimEmbed] });
 
     try {
       await interaction.channel.setName(`claimed-${refId.toLowerCase()}`).catch(() => null);
@@ -50,14 +73,13 @@ export async function handleTicketButtons(interaction) {
     return;
   }
 
-  // Handle Close
+  // 2. Handle Close
   if (customId.startsWith('ticket_close_')) {
     const refId = customId.replace('ticket_close_', '');
     const ticket = await getTicketByRef(refId);
 
-    await interaction.reply({
-      content: '🔒 Closing ticket, compiling transcript, and generating receipt...'
-    });
+    const loadingEmbed = createLoadingEmbed('Compiling conversation history, generating receipt, and archiving channel...');
+    await interaction.reply({ embeds: [loadingEmbed] });
 
     const handler = ticket && ticket.claimed_by
       ? await interaction.client.users.fetch(ticket.claimed_by).catch(() => interaction.user)
@@ -95,7 +117,7 @@ export async function handleTicketButtons(interaction) {
       const logChan = await interaction.client.channels.fetch(config.channels.transcripts).catch(() => null);
       if (logChan) {
         await logChan.send({
-          content: `📁 **Ticket Closed:** \`${refId}\` | Customer: <@${ticket?.user_id}> | Handler: <@${handler.id}> | DM Delivery: ${dmDelivered ? 'Delivered' : 'Failed/Blocked'}`,
+          content: `📁 **Ticket Closed:** \`${refId}\` | Customer: <@${ticket?.user_id}> | Handler: <@${handler.id}> | DM Delivery: ${dmDelivered ? '✅ Delivered' : '⚠️ Failed / Blocked'}`,
           embeds: [receiptEmbed],
           files: [transcript.attachment]
         }).catch(() => null);
@@ -113,10 +135,17 @@ export async function handleTicketButtons(interaction) {
     return;
   }
 
-  // Handle Red Report button inside ticket
+  // 3. Handle Red Report button inside ticket
   if (customId.startsWith('ticket_report_')) {
+    const refId = customId.replace('ticket_report_', '');
+    const reportNotice = createErrorEmbed(
+      'Staff Misconduct Escalation Protocol',
+      'If you are experiencing unprofessional behavior, prolonged inactivity (over 48h), or severe disrespect from an assigned staff member, please take the following steps:',
+      'ESCALATE_REPORT',
+      '1. Note your Reference ID: `' + refId + '`\n2. Mention the `@Executive Team` role or submit a confidential report with `/ticket-open category:Report a Member`.'
+    );
     return interaction.reply({
-      content: '🚨 **Notice to Customer:** If you are experiencing misconduct, harassment, or severe delays from any staff member, please save your ticket reference and ping an Executive or submit a formal report.',
+      embeds: [reportNotice],
       ephemeral: true
     });
   }
