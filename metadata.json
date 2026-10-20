@@ -1,0 +1,6 @@
+{
+  "name": "Silence Designs — Discord Bot",
+  "description": "Professional Discord bot for Silence Designs ER:LC livery and design team, featuring 50+ slash commands, orders, tickets, store, giveaways, AI design, and moderation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
